@@ -54,9 +54,13 @@ public:
                 vertexes[v].degree_ = 0;
             }
 
-            std::vector<GraphEdge> edges(content.size());
+            std::vector<GraphEdge> edges0(content.size());
+            std::vector<GraphEdge> edges1(content.size());
+            std::vector<GraphEdge> edges2(content.size());
             for (GraphId e = 0; e < content.size(); ++e) {
-                edges[e].id_ = e;
+                edges0[e].id_ = e;
+                edges1[e].id_ = e;
+                edges2[e].id_ = e;
             }
 
             using GraphEdges = boost::intrusive::list<GraphEdge>;
@@ -64,33 +68,33 @@ public:
             using GraphVertexes = boost::intrusive::list<GraphVertex>;
             std::vector<GraphVertexes> degreeToVertexes(content.size());
 
-            auto addEdge = [&](GraphId v, GraphId e) {
-                vertexesToEdges[v].push_back(edges[e]);
+            auto addEdge = [&](GraphId v, GraphEdge& e) {
+                vertexesToEdges[v].push_back(e);
                 ++vertexes[v].degree_;
             };
 
             for (size_t i = 0; i < hashes.size(); ++i) {
-                addEdge(hashes[i].hash0_, i);
-                addEdge(hashes[i].hash1_, i);
-                addEdge(hashes[i].hash2_, i);
+                addEdge(hashes[i].hash0_, edges0[i]);
+                addEdge(hashes[i].hash1_, edges1[i]);
+                addEdge(hashes[i].hash2_, edges2[i]);
             }
             for (size_t i = 0; i < m; ++i) {
                 degreeToVertexes[ vertexes[i].degree_ ].push_back(vertexes[i]);
             }
 
-            auto reduceDegree = [&](GraphId v, GraphId e) {
+            auto reduceDegree = [&](GraphId v, GraphEdge& e) {
                 GraphId tmpDegree = vertexes[v].degree_;
                 degreeToVertexes[tmpDegree].erase( GraphVertexes::s_iterator_to(vertexes[v]) );
                 --vertexes[v].degree_;
                 --tmpDegree;
                 degreeToVertexes[tmpDegree].push_back(vertexes[v]);
-                vertexesToEdges[v].erase( GraphEdges::s_iterator_to(edges[e]) );
+                vertexesToEdges[v].erase( GraphEdges::s_iterator_to(e) );
             };
 
-            auto deleteEdge = [&](GraphId edge) {
-                reduceDegree(hashes[edge].hash0_, edge);
-                reduceDegree(hashes[edge].hash1_, edge);
-                reduceDegree(hashes[edge].hash2_, edge);
+            auto deleteEdge = [&](GraphId e) {
+                reduceDegree(hashes[e].hash0_, edges0[e]);
+                reduceDegree(hashes[e].hash1_, edges1[e]);
+                reduceDegree(hashes[e].hash2_, edges2[e]);
             };
 
             for (size_t i = 0; i < hashes.size(); ++i) {
@@ -101,13 +105,18 @@ public:
                 if (1 != vertexesToEdges[u].size()) {
                     throw std::runtime_error("graph invariant is busted 1");
                 }
-                GraphId e = vertexesToEdges[u].begin()->id_;
-                deleteEdge(e);
-                deleteOrder[i] = e;
+                GraphEdge& e = vertexesToEdges[u].front();
+                deleteEdge(e.id_);
+                deleteOrder[i] = e.id_;
                 if (0 != vertexesToEdges[u].size()) {
                     throw std::runtime_error("graph invariant is busted 0");
                 }
             }
+        }
+
+        data_.resize(m);
+        for (auto& item: data_) {
+            item.g_ = 3;
         }
 
         std::vector<bool> visited(m);
@@ -128,11 +137,6 @@ public:
             for (size_t j = 0; j < 3; ++j) {
                 visited[hashes[u][j]] = true;
             }
-        }
-
-        data_.resize(m);
-        for (auto& item: data_) {
-            item.g_ = 3;
         }
 
         for (size_t i = 0; i < content.size(); ++i) {
