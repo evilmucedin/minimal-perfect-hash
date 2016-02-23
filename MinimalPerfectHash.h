@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include <boost/intrusive/list.hpp>
+
 // Minimal Perfect Hash implementation
 // http://cmph.sourceforge.net/bdz.html
 // http://cmph.sourceforge.net/papers/wads07.pdf
@@ -23,6 +25,17 @@ public:
     };
 #pragma pack(pop)
 
+    using GraphId = uint32_t;
+
+    struct GraphVertex : public boost::intrusive::list_base_hook<> {
+        GraphId id_;
+        GraphId degree_;
+    };
+
+    struct GraphEdge : public boost::intrusive::list_base_hook<> {
+        GraphId id_;
+    };
+
     MinimalPerfectHash(const Vector& content, const K& invalidKey) {
         size_t m = ((content.size() * 4) / 9 + 1) * 3;
         while (HasCollision(content, m / 3)) {
@@ -35,49 +48,63 @@ public:
         std::vector<size_t> deleteOrder(content.size());
 
         {
-            std::vector<std::vector<size_t>> edges(m);
-            std::vector<size_t> nodeDegree(m);
-            std::vector<std::unordered_set<size_t>> degree2vertexes(m);
-
-            for (size_t i = 0; i < hashes.size(); ++i) {
-                edges[hashes[i].hash0_].emplace_back(i);
-                edges[hashes[i].hash1_].emplace_back(i);
-                edges[hashes[i].hash2_].emplace_back(i);
-                ++nodeDegree[hashes[i].hash0_];
-                ++nodeDegree[hashes[i].hash1_];
-                ++nodeDegree[hashes[i].hash2_];
-            }
-            for (size_t i = 0; i < m; ++i) {
-                degree2vertexes[ nodeDegree[i] ].insert(i);
+            std::vector<GraphVertex> vertexes(m);
+            for (GraphId v = 0; v < m; ++v) {
+                vertexes[v].id_ = v;
+                vertexes[v].degree_ = 0;
             }
 
-            auto reduceDegree = [&](size_t u, size_t edge) {
-                size_t tmpDegree = nodeDegree[u];
-                degree2vertexes[tmpDegree].erase(u);
-                --nodeDegree[u];
-                --tmpDegree;
-                degree2vertexes[tmpDegree].insert(u);
-                edges[u].erase(std::find(edges[u].begin(), edges[u].end(), edge));
+            std::vector<GraphEdge> edges(content.size());
+            for (GraphId e = 0; e < content.size(); ++e) {
+                edges[e].id_ = e;
+            }
+
+            using GraphEdges = boost::intrusive::list<GraphEdge>;
+            std::vector<GraphEdges> vertexesToEdges(m);
+            using GraphVertexes = boost::intrusive::list<GraphVertex>;
+            std::vector<GraphVertexes> degreeToVertexes(content.size());
+
+            auto addEdge = [&](GraphId v, GraphId e) {
+                vertexesToEdges[v].push_back(edges[e]);
+                ++vertexes[v].degree_;
             };
 
-            auto deleteEdge = [&](size_t edge) {
+            for (size_t i = 0; i < hashes.size(); ++i) {
+                addEdge(hashes[i].hash0_, i);
+                addEdge(hashes[i].hash1_, i);
+                addEdge(hashes[i].hash2_, i);
+            }
+            for (size_t i = 0; i < m; ++i) {
+                degreeToVertexes[ vertexes[i].degree_ ].push_back(vertexes[i]);
+            }
+
+            auto reduceDegree = [&](GraphId v, GraphId e) {
+                GraphId tmpDegree = vertexes[v].degree_;
+                degreeToVertexes[tmpDegree].erase( GraphVertexes::s_iterator_to(vertexes[v]) );
+                --vertexes[v].degree_;
+                --tmpDegree;
+                degreeToVertexes[tmpDegree].push_back(vertexes[v]);
+                vertexesToEdges[v].erase( GraphEdges::s_iterator_to(edges[e]) );
+            };
+
+            auto deleteEdge = [&](GraphId edge) {
                 reduceDegree(hashes[edge].hash0_, edge);
                 reduceDegree(hashes[edge].hash1_, edge);
                 reduceDegree(hashes[edge].hash2_, edge);
             };
 
             for (size_t i = 0; i < hashes.size(); ++i) {
-                if (degree2vertexes[1].empty()) {
+                if (degreeToVertexes[1].empty()) {
                     throw std::runtime_error("unexpected graph");
                 }
-                size_t u = *(degree2vertexes[1].begin());
-                if (1 != edges[u].size()) {
+                GraphId u = degreeToVertexes[1].begin()->id_;
+                if (1 != vertexesToEdges[u].size()) {
                     throw std::runtime_error("graph invariant is busted 1");
                 }
-                size_t e = *(edges[u].begin());
+                GraphId e = vertexesToEdges[u].begin()->id_;
                 deleteEdge(e);
                 deleteOrder[i] = e;
-                if (0 != edges[u].size()) {
+                if (0 != vertexesToEdges[u].size()) {
                     throw std::runtime_error("graph invariant is busted 0");
                 }
             }
