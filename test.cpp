@@ -29,7 +29,7 @@ int main() {
 
     using Data = MPH::Vector;
 
-    static const size_t N = 1000000;
+    static const size_t N = 76207733;
 
     Data data(N);
     unordered_set<uint64_t> used;
