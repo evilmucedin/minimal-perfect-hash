@@ -1,7 +1,7 @@
 MPHF
 ====
 
-Minimal perfect hash function (BDZ algorithm)
+Minimal perfect hash function (BDZ algorithm). Modern C++ implementation.
 
 need to store g array and h0, h1, h3 functions
 every element in g is between [0, 2] so need two bits
